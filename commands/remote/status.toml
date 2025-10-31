@@ -1,0 +1,15 @@
+prompt = """
+Get the status of the agent sandbox named: {{args}}
+
+Use the get_sandbox_status tool to retrieve the current status of the sandbox.
+
+Display the following information in a clear, formatted way:
+- Sandbox name and namespace
+- Service FQDN and service name
+- Ready status and any conditions
+- Pod name and status
+- Number of replicas
+- Creation timestamp
+
+If the sandbox is not ready, explain what might be preventing it from becoming ready.
+"""

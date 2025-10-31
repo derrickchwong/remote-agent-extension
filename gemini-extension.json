@@ -1,0 +1,13 @@
+{
+  "name": "async-remote-agent-extension",
+  "version": "0.0.1",
+  "description": "Gemini CLI extension for managing remote agent sandboxes on GKE",
+  "contextFileName": "GEMINI.md",
+  "mcpServers": {
+    "remoteSandboxServer": {
+      "command": "node",
+      "args": ["${extensionPath}${/}dist${/}remote-sandbox.js"],
+      "cwd": "${extensionPath}"
+    }
+  }
+}

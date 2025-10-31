@@ -1,0 +1,18 @@
+{
+  "name": "async-remote-agent-extension",
+  "version": "0.0.1",
+  "description": "Gemini CLI extension for managing remote agent sandboxes on GKE",
+  "type": "module",
+  "main": "remote-sandbox.js",
+  "scripts": {
+    "build": "tsc"
+  },
+  "devDependencies": {
+    "typescript": "~5.4.5",
+    "@types/node": "^20.11.25"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.11.0",
+    "zod": "^3.22.4"
+  }
+}

@@ -1,0 +1,13 @@
+prompt = """
+Create a new agent sandbox on the GKE cluster with the name: {{args}}
+
+Use the create_sandbox tool to create the sandbox. If no additional parameters are provided, use the defaults from the config file.
+
+After creation, show the sandbox status including:
+- Name and namespace
+- Service FQDN
+- Ready status
+- Pod status
+
+If there are any errors, explain what went wrong and suggest solutions.
+"""

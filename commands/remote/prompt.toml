@@ -1,0 +1,22 @@
+prompt = """
+Parse the arguments to extract the sandbox name and the user's prompt.
+
+The format is expected to be: <sandbox-name> <user-prompt>
+
+For example: "/remote:prompt my-sandbox write a hello world script" means:
+- Sandbox name: my-sandbox
+- User prompt: write a hello world script
+
+Use the send_prompt_to_sandbox tool with the command: gemini -y -p "<user-prompt>"
+
+This will execute Gemini CLI inside the sandbox with the user's prompt.
+
+Display the results clearly:
+- The prompt that was sent
+- Output from Gemini CLI
+- Exit code
+
+If there are any errors, explain what might have gone wrong.
+
+Arguments: {{args}}
+"""

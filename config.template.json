@@ -1,0 +1,8 @@
+{
+  "proxyUrl": "http://PROXY_EXTERNAL_IP",
+  "username": "default",
+  "namespace": "default",
+  "kubeconfig": "/path/to/your/gke/kubeconfig",
+  "defaultImage": "sandbox-runtime:latest",
+  "defaultPort": 8888
+}
