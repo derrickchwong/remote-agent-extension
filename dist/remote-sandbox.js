@@ -67,7 +67,34 @@ spec:
         image: ${image}
         imagePullPolicy: IfNotPresent
         ports:
-        - containerPort: ${port}
+        - containerPort: 5900
+          name: vnc
+        - containerPort: 8080
+          name: public
+        - containerPort: 8081
+          name: auth-backend
+        - containerPort: 6080
+          name: websocket-proxy
+        - containerPort: 8088
+          name: gem-server
+        - containerPort: 8079
+          name: mcp-hub
+        - containerPort: 8091
+          name: sandbox-srv
+        - containerPort: 8888
+          name: jupyter-lab
+        - containerPort: 8200
+          name: code-server
+        - containerPort: 8100
+          name: mcp-browser
+        - containerPort: 8118
+          name: tinyproxy
+        - containerPort: 8101
+          name: mcp-markitdown
+        - containerPort: 8102
+          name: mcp-devtools
+        - containerPort: 9222
+          name: browser-debug
         env:
         - name: GOOGLE_GENAI_USE_VERTEXAI
           value: "true"
