@@ -14,9 +14,10 @@ This Gemini CLI extension allows you to manage remote agent sandboxes on a GKE c
 
 1. A GKE cluster with [agent-sandbox](https://github.com/kubernetes-sigs/agent-sandbox) installed
 2. The sandbox proxy deployed on your GKE cluster (see `~/workspaces/remote-agent-sandbox-proxy`)
-3. `kubectl` configured to access your GKE cluster
-4. Node.js and npm installed
-5. Gemini CLI installed
+3. Node.js and npm installed
+4. Gemini CLI installed
+
+**Note:** No kubectl or kubeconfig required! All Kubernetes operations are handled by the proxy.
 
 ## Installation
 
@@ -56,18 +57,16 @@ Edit the config file with your settings:
   "proxyUrl": "http://35.123.45.67",
   "username": "alice",
   "namespace": "default",
-  "kubeconfig": "/path/to/your/gke/kubeconfig",
-  "defaultImage": "sandbox-runtime:latest",
+  "defaultImage": "us-central1-docker.pkg.dev/agent-sandbox-476202/agent-sandbox/sandbox-runtime:latest",
   "defaultPort": 8888
 }
 ```
 
 Configuration options:
-- `proxyUrl`: **REQUIRED** - URL of the sandbox proxy LoadBalancer (get this from `kubectl get service sandbox-proxy`)
-- `username`: Username for sandbox routing (default: "default"). Sandboxes must have a `user` label matching this value.
+- `proxyUrl`: **REQUIRED** - URL of the sandbox proxy LoadBalancer (get this with: `kubectl get service sandbox-proxy`)
+- `username`: Username for sandbox routing (default: "default"). Sandboxes created will have a `user` label with this value.
 - `namespace`: Kubernetes namespace where sandboxes will be created (default: "default")
-- `kubeconfig`: Path to your kubeconfig file (optional, uses default kubectl config if not specified)
-- `defaultImage`: Default container image for sandboxes (default: "sandbox-runtime:latest")
+- `defaultImage`: Default container image for sandboxes (optional)
 - `defaultPort`: Default port for the sandbox API (default: 8888)
 
 ## Usage
@@ -157,45 +156,58 @@ This extension uses the agent-sandbox Kubernetes CRD to create isolated sandbox 
 3. Provides isolation using your cluster's configured runtime (e.g., gVisor)
 4. Can persist data using PersistentVolumeClaims
 
-### Network Connectivity
+### Architecture
 
-The extension communicates with sandboxes through a proxy service deployed in your GKE cluster:
+The extension communicates **entirely through the proxy** - no direct Kubernetes access needed:
 
 ```
-Gemini CLI (local workstation)
-    ↓ HTTP request to proxy LoadBalancer
+Gemini CLI Extension (local workstation)
+    ↓ All operations via HTTP to proxy
 Sandbox Proxy (GKE with public IP)
-    ↓ routes based on path: /{username}/{sandboxname}/*
+    ↓ Manages Kubernetes resources via k8s API
+    ↓ Routes requests to sandboxes
 Sandbox Pods (internal Kubernetes services)
 ```
 
-1. When you send a command with `/remote:prompt my-sandbox ls -la`, the extension:
-   - Makes an HTTP POST request to `http://PROXY_IP/alice/my-sandbox/execute`
-   - The proxy discovers sandboxes via the Kubernetes API and routes to the correct pod
-   - Returns the results (stdout, stderr, exit code)
+**Proxy API Endpoints:**
+- `POST /api/sandboxes` - Create sandbox (proxy creates k8s resources)
+- `GET /api/sandboxes` - List all sandboxes
+- `GET /api/sandboxes/:username/:name` - Get sandbox status
+- `DELETE /api/sandboxes/:username/:name` - Delete sandbox
+- `POST /:username/:name/v1/shell/exec` - Execute command in sandbox
 
 **Benefits:**
+- ✅ No kubectl required - works from anywhere with internet access
+- ✅ No kubeconfig needed - proxy handles all k8s authentication
 - ✅ Fast - no port-forwarding overhead
 - ✅ Simple - just HTTP requests
 - ✅ Scalable - proxy can handle many concurrent requests
-- ✅ Secure - only the proxy needs a public IP, sandboxes remain internal
+- ✅ Secure - only proxy needs k8s access, sandboxes remain internal
 
 **Setup:**
 The proxy service is in `~/workspaces/remote-agent-sandbox-proxy`. Deploy it to your GKE cluster and configure the LoadBalancer IP in this extension's config.
 
 ## Troubleshooting
 
-### "kubectl command not found"
-Make sure kubectl is installed and in your PATH.
+### "proxyUrl is required in config.json"
+Make sure you have created the config file at `~/.config/gemini-remote-sandbox/config.json` with at least a `proxyUrl` field.
+
+### "Failed to create sandbox" / Connection errors
+- Check that the proxy is running: `kubectl get deployment sandbox-proxy`
+- Verify the proxy LoadBalancer IP: `kubectl get service sandbox-proxy`
+- Test proxy health: `curl http://PROXY_IP/health`
+- Ensure your `proxyUrl` in config.json matches the proxy's external IP
 
 ### "Sandbox not ready"
-Wait a few seconds for the sandbox pod to start. You can check the status with `/remote:status <name>`.
+Wait 30-60 seconds for the sandbox pod to start. You can check the status with `/remote:status <name>` or `list all sandboxes`.
+
+### "Sandbox not found" 404 errors
+- Verify the sandbox exists: ask Gemini to "list all sandboxes"
+- Check that your `username` in config.json matches the sandbox's `user` label
+- The proxy may need time to discover new sandboxes (30 second refresh interval)
 
 ### "Failed to execute command"
 Ensure your sandbox image includes the FastAPI runtime server as shown in the agent-sandbox examples.
-
-### Permission denied errors
-Make sure your kubeconfig has the necessary permissions to create and manage Sandbox resources in the specified namespace.
 
 ## Development
 

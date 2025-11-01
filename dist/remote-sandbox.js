@@ -6,11 +6,8 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
-import { exec } from 'child_process';
-import { promisify } from 'util';
 import * as fs from 'fs/promises';
 import * as path from 'path';
-const execAsync = promisify(exec);
 const server = new McpServer({
     name: 'async-remote-agent',
     version: '0.0.1',
@@ -21,88 +18,18 @@ const configPath = path.join(process.env.HOME || '', '.config', 'gemini-remote-s
 async function loadConfig() {
     try {
         const content = await fs.readFile(configPath, 'utf-8');
-        return JSON.parse(content);
+        const config = JSON.parse(content);
+        if (!config.proxyUrl) {
+            throw new Error('proxyUrl is required in config.json. Please set it to your proxy URL (e.g., http://34.27.37.121)');
+        }
+        return config;
     }
     catch (error) {
-        // Return defaults if config doesn't exist
-        return {
-            username: 'default',
-            namespace: 'default',
-            defaultImage: 'sandbox-runtime:latest',
-            defaultPort: 8888,
-        };
+        if (error.code === 'ENOENT') {
+            throw new Error(`Config file not found at ${configPath}. Please create it with at least a 'proxyUrl' field.`);
+        }
+        throw error;
     }
-}
-// Execute kubectl command
-async function kubectl(args, config) {
-    const kubeconfigFlag = config?.kubeconfig ? `--kubeconfig=${config.kubeconfig}` : '';
-    const namespaceFlag = config?.namespace ? `-n ${config.namespace}` : '';
-    const cmd = `kubectl ${kubeconfigFlag} ${namespaceFlag} ${args.join(' ')}`;
-    try {
-        const { stdout, stderr } = await execAsync(cmd);
-        // Ignore stderr warnings
-        return stdout.trim();
-    }
-    catch (error) {
-        throw new Error(`kubectl command failed: ${error.message}\nCommand: ${cmd}`);
-    }
-}
-// Create sandbox YAML
-function generateSandboxYAML(name, image, port, username) {
-    return `apiVersion: agents.x-k8s.io/v1alpha1
-kind: Sandbox
-metadata:
-  name: ${name}
-  labels:
-    user: ${username}
-spec:
-  podTemplate:
-    metadata:
-      labels:
-        sandbox: ${name}
-        managed-by: gemini-cli
-    spec:
-      containers:
-      - name: sandbox-runtime
-        image: ${image}
-        imagePullPolicy: IfNotPresent
-        ports:
-        - containerPort: 5900
-          name: vnc
-        - containerPort: 8080
-          name: public
-        - containerPort: 8081
-          name: auth-backend
-        - containerPort: 6080
-          name: websocket-proxy
-        - containerPort: 8088
-          name: gem-server
-        - containerPort: 8079
-          name: mcp-hub
-        - containerPort: 8091
-          name: sandbox-srv
-        - containerPort: 8888
-          name: jupyter-lab
-        - containerPort: 8200
-          name: code-server
-        - containerPort: 8100
-          name: mcp-browser
-        - containerPort: 8118
-          name: tinyproxy
-        - containerPort: 8101
-          name: mcp-markitdown
-        - containerPort: 8102
-          name: mcp-devtools
-        - containerPort: 9222
-          name: browser-debug
-        env:
-        - name: GOOGLE_GENAI_USE_VERTEXAI
-          value: "true"
-        - name: GOOGLE_CLOUD_PROJECT
-          value: "agent-sandbox-476202"
-        - name: GOOGLE_CLOUD_LOCATION
-          value: "global"
-`;
 }
 // Tool: Create a new sandbox
 server.registerTool('create_sandbox', {
@@ -115,28 +42,41 @@ server.registerTool('create_sandbox', {
 }, async ({ name, image, port }) => {
     try {
         const config = await loadConfig();
-        const sandboxImage = image || config.defaultImage || 'sandbox-runtime:latest';
+        const sandboxImage = image || config.defaultImage;
         const sandboxPort = port || config.defaultPort || 8888;
         const username = config.username || 'default';
-        // Generate YAML
-        const yaml = generateSandboxYAML(name, sandboxImage, sandboxPort, username);
-        // Create temporary file for YAML
-        const tmpFile = `/tmp/sandbox-${name}-${Date.now()}.yaml`;
-        await fs.writeFile(tmpFile, yaml);
-        // Apply the sandbox
-        await kubectl(['apply', '-f', tmpFile], config);
-        // Clean up temp file
-        await fs.unlink(tmpFile);
-        // Wait for the sandbox to be created and ready
+        const namespace = config.namespace || 'default';
+        // Create sandbox via proxy API
+        const createUrl = `${config.proxyUrl}/api/sandboxes`;
+        const createResponse = await fetch(createUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                name,
+                username,
+                image: sandboxImage,
+                port: sandboxPort,
+                namespace,
+            }),
+        });
+        if (!createResponse.ok) {
+            const errorData = await createResponse.json();
+            throw new Error(`Failed to create sandbox: ${errorData.error || errorData.message}`);
+        }
+        const createData = await createResponse.json();
+        // Wait for the sandbox to be ready (30 seconds)
         await new Promise(resolve => setTimeout(resolve, 30000));
-        // Get the status
-        const status = await kubectl(['get', 'sandbox', name, '-o', 'json'], config);
-        const sandboxData = JSON.parse(status);
-        // Configure Gemini CLI with MCP server settings
-        if (config.proxyUrl) {
-            try {
-                const url = `${config.proxyUrl}/${username}/${name}/v1/shell/exec`;
-                const settingsCommand = `mkdir -p ~/.gemini && cat > ~/.gemini/settings.json << 'EOFJSON'
+        // Get the status from proxy
+        const statusUrl = `${config.proxyUrl}/api/sandboxes/${username}/${name}`;
+        const statusResponse = await fetch(statusUrl);
+        let sandboxData = {};
+        if (statusResponse.ok) {
+            sandboxData = await statusResponse.json();
+        }
+        // Configure Gemini CLI with MCP server settings in the sandbox
+        try {
+            const execUrl = `${config.proxyUrl}/${username}/${name}/v1/shell/exec`;
+            const settingsCommand = `mkdir -p ~/.gemini && cat > ~/.gemini/settings.json << 'EOFJSON'
 {
   "mcpServers": {
     "sandbox": {
@@ -146,15 +86,14 @@ server.registerTool('create_sandbox', {
   }
 }
 EOFJSON`;
-                await fetch(url, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ command: settingsCommand }),
-                });
-            }
-            catch (e) {
-                // Ignore errors in settings configuration
-            }
+            await fetch(execUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ command: settingsCommand }),
+            });
+        }
+        catch (e) {
+            // Ignore errors in settings configuration
         }
         return {
             content: [
@@ -164,10 +103,10 @@ EOFJSON`;
                         success: true,
                         message: `Sandbox '${name}' created successfully`,
                         sandbox: {
-                            name: sandboxData.metadata.name,
-                            namespace: sandboxData.metadata.namespace,
-                            serviceFQDN: sandboxData.status?.serviceFQDN || 'pending',
-                            ready: sandboxData.status?.conditions?.find((c) => c.type === 'Ready')?.status === 'True',
+                            name: sandboxData.name || name,
+                            namespace: sandboxData.namespace || namespace,
+                            serviceFQDN: sandboxData.serviceFQDN || 'pending',
+                            ready: sandboxData.ready || false,
                         },
                     }, null, 2),
                 },
@@ -197,43 +136,23 @@ server.registerTool('get_sandbox_status', {
 }, async ({ name }) => {
     try {
         const config = await loadConfig();
-        // Get sandbox details
-        const output = await kubectl(['get', 'sandbox', name, '-o', 'json'], config);
-        const sandbox = JSON.parse(output);
-        // Get pod status
-        const podSelector = sandbox.status?.selector || `sandbox=${name}`;
-        let podStatus = 'unknown';
-        let podName = 'unknown';
-        try {
-            const podOutput = await kubectl(['get', 'pods', '-l', podSelector, '-o', 'json'], config);
-            const pods = JSON.parse(podOutput);
-            if (pods.items && pods.items.length > 0) {
-                const pod = pods.items[0];
-                podName = pod.metadata.name;
-                podStatus = pod.status.phase;
+        const username = config.username || 'default';
+        // Get sandbox status from proxy API
+        const url = `${config.proxyUrl}/api/sandboxes/${username}/${name}`;
+        const response = await fetch(url);
+        if (!response.ok) {
+            if (response.status === 404) {
+                throw new Error(`Sandbox '${name}' not found`);
             }
+            const errorData = await response.json();
+            throw new Error(`Failed to get sandbox status: ${errorData.error || errorData.message}`);
         }
-        catch (e) {
-            // Ignore pod status errors
-        }
-        const ready = sandbox.status?.conditions?.find((c) => c.type === 'Ready');
+        const sandbox = await response.json();
         return {
             content: [
                 {
                     type: 'text',
-                    text: JSON.stringify({
-                        name: sandbox.metadata.name,
-                        namespace: sandbox.metadata.namespace,
-                        serviceFQDN: sandbox.status?.serviceFQDN || 'pending',
-                        service: sandbox.status?.service || 'pending',
-                        replicas: sandbox.status?.replicas || 0,
-                        ready: ready?.status === 'True',
-                        readyReason: ready?.reason,
-                        readyMessage: ready?.message,
-                        podName,
-                        podStatus,
-                        createdAt: sandbox.metadata.creationTimestamp,
-                    }, null, 2),
+                    text: JSON.stringify(sandbox, null, 2),
                 },
             ],
         };
@@ -321,23 +240,19 @@ server.registerTool('list_sandboxes', {
 }, async () => {
     try {
         const config = await loadConfig();
-        const output = await kubectl(['get', 'sandboxes', '-o', 'json'], config);
-        const sandboxList = JSON.parse(output);
-        const sandboxes = sandboxList.items.map((sb) => ({
-            name: sb.metadata.name,
-            namespace: sb.metadata.namespace,
-            serviceFQDN: sb.status?.serviceFQDN || 'pending',
-            ready: sb.status?.conditions?.find((c) => c.type === 'Ready')?.status === 'True',
-            createdAt: sb.metadata.creationTimestamp,
-        }));
+        // List sandboxes from proxy API
+        const url = `${config.proxyUrl}/api/sandboxes`;
+        const response = await fetch(url);
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(`Failed to list sandboxes: ${errorData.error || errorData.message}`);
+        }
+        const data = await response.json();
         return {
             content: [
                 {
                     type: 'text',
-                    text: JSON.stringify({
-                        count: sandboxes.length,
-                        sandboxes,
-                    }, null, 2),
+                    text: JSON.stringify(data, null, 2),
                 },
             ],
         };
@@ -365,15 +280,26 @@ server.registerTool('delete_sandbox', {
 }, async ({ name }) => {
     try {
         const config = await loadConfig();
-        await kubectl(['delete', 'sandbox', name], config);
+        const username = config.username || 'default';
+        const namespace = config.namespace || 'default';
+        // Delete sandbox via proxy API
+        const url = `${config.proxyUrl}/api/sandboxes/${username}/${name}?namespace=${namespace}`;
+        const response = await fetch(url, {
+            method: 'DELETE',
+        });
+        if (!response.ok) {
+            if (response.status === 404) {
+                throw new Error(`Sandbox '${name}' not found`);
+            }
+            const errorData = await response.json();
+            throw new Error(`Failed to delete sandbox: ${errorData.error || errorData.message}`);
+        }
+        const data = await response.json();
         return {
             content: [
                 {
                     type: 'text',
-                    text: JSON.stringify({
-                        success: true,
-                        message: `Sandbox '${name}' deleted successfully`,
-                    }, null, 2),
+                    text: JSON.stringify(data, null, 2),
                 },
             ],
         };
