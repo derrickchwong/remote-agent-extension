@@ -64,37 +64,29 @@ server.registerTool('create_sandbox', {
             throw new Error(`Failed to create sandbox: ${errorData.error || errorData.message}`);
         }
         const createData = await createResponse.json();
-        // Wait for the sandbox to be ready (30 seconds)
-        await new Promise(resolve => setTimeout(resolve, 30000));
-        // Get the status from proxy
+        // Poll for sandbox readiness (up to 60 seconds)
         const statusUrl = `${config.proxyUrl}/api/sandboxes/${username}/${name}`;
-        const statusResponse = await fetch(statusUrl);
         let sandboxData = {};
-        if (statusResponse.ok) {
-            sandboxData = await statusResponse.json();
+        let ready = false;
+        const maxAttempts = 12; // 12 * 5 seconds = 60 seconds
+        for (let attempt = 0; attempt < maxAttempts; attempt++) {
+            await new Promise(resolve => setTimeout(resolve, 5000));
+            try {
+                const statusResponse = await fetch(statusUrl);
+                if (statusResponse.ok) {
+                    sandboxData = await statusResponse.json();
+                    if (sandboxData.ready) {
+                        ready = true;
+                        break;
+                    }
+                }
+            }
+            catch (e) {
+                // Continue polling on error
+            }
         }
-        // Configure Gemini CLI with MCP server settings in the sandbox
-        try {
-            const execUrl = `${config.proxyUrl}/${username}/${name}/v1/shell/exec`;
-            const settingsCommand = `mkdir -p ~/.gemini && cat > ~/.gemini/settings.json << 'EOFJSON'
-{
-  "mcpServers": {
-    "sandbox": {
-      "httpUrl": "http://localhost:${sandboxPort}/mcp",
-      "args": []
-    }
-  }
-}
-EOFJSON`;
-            await fetch(execUrl, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ command: settingsCommand }),
-            });
-        }
-        catch (e) {
-            // Ignore errors in settings configuration
-        }
+        // Note: Gemini settings are now configured via init container in the sandbox pod
+        // No need to configure them here anymore
         return {
             content: [
                 {
@@ -114,6 +106,7 @@ EOFJSON`;
         };
     }
     catch (error) {
+        console.error(`Error creating sandbox '${name}':`, error);
         return {
             content: [
                 {
@@ -158,6 +151,7 @@ server.registerTool('get_sandbox_status', {
         };
     }
     catch (error) {
+        console.error(`Error getting sandbox status for '${name}':`, error);
         return {
             content: [
                 {
@@ -220,6 +214,7 @@ server.registerTool('send_prompt_to_sandbox', {
         };
     }
     catch (error) {
+        console.error(`Error sending prompt to sandbox '${name}':`, error);
         return {
             content: [
                 {
@@ -258,6 +253,7 @@ server.registerTool('list_sandboxes', {
         };
     }
     catch (error) {
+        console.error('Error listing sandboxes:', error);
         return {
             content: [
                 {
@@ -305,6 +301,7 @@ server.registerTool('delete_sandbox', {
         };
     }
     catch (error) {
+        console.error(`Error deleting sandbox '${name}':`, error);
         return {
             content: [
                 {
@@ -352,6 +349,7 @@ server.registerTool('pause_sandbox', {
         };
     }
     catch (error) {
+        console.error(`Error pausing sandbox '${name}':`, error);
         return {
             content: [
                 {
@@ -399,6 +397,7 @@ server.registerTool('resume_sandbox', {
         };
     }
     catch (error) {
+        console.error(`Error resuming sandbox '${name}':`, error);
         return {
             content: [
                 {
