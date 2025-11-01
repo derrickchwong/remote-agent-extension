@@ -379,6 +379,116 @@ server.registerTool(
   },
 );
 
+// Tool: Pause sandbox
+server.registerTool(
+  'pause_sandbox',
+  {
+    description: 'Pauses an agent sandbox by setting replicas to 0',
+    inputSchema: z.object({
+      name: z.string().describe('Name of the sandbox to pause'),
+    }).shape,
+  },
+  async ({ name }) => {
+    try {
+      const config = await loadConfig();
+      const username = config.username || 'default';
+      const namespace = config.namespace || 'default';
+
+      // Pause sandbox via proxy API
+      const url = `${config.proxyUrl}/api/sandboxes/${username}/${name}/pause?namespace=${namespace}`;
+      const response = await fetch(url, {
+        method: 'POST',
+      });
+
+      if (!response.ok) {
+        if (response.status === 404) {
+          throw new Error(`Sandbox '${name}' not found`);
+        }
+        const errorData = await response.json();
+        throw new Error(`Failed to pause sandbox: ${errorData.error || errorData.message}`);
+      }
+
+      const data = await response.json();
+
+      return {
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify(data, null, 2),
+          },
+        ],
+      };
+    } catch (error: any) {
+      return {
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify({
+              success: false,
+              error: error.message,
+            }, null, 2),
+          },
+        ],
+      };
+    }
+  },
+);
+
+// Tool: Resume sandbox
+server.registerTool(
+  'resume_sandbox',
+  {
+    description: 'Resumes a paused agent sandbox by setting replicas to 1',
+    inputSchema: z.object({
+      name: z.string().describe('Name of the sandbox to resume'),
+    }).shape,
+  },
+  async ({ name }) => {
+    try {
+      const config = await loadConfig();
+      const username = config.username || 'default';
+      const namespace = config.namespace || 'default';
+
+      // Resume sandbox via proxy API
+      const url = `${config.proxyUrl}/api/sandboxes/${username}/${name}/resume?namespace=${namespace}`;
+      const response = await fetch(url, {
+        method: 'POST',
+      });
+
+      if (!response.ok) {
+        if (response.status === 404) {
+          throw new Error(`Sandbox '${name}' not found`);
+        }
+        const errorData = await response.json();
+        throw new Error(`Failed to resume sandbox: ${errorData.error || errorData.message}`);
+      }
+
+      const data = await response.json();
+
+      return {
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify(data, null, 2),
+          },
+        ],
+      };
+    } catch (error: any) {
+      return {
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify({
+              success: false,
+              error: error.message,
+            }, null, 2),
+          },
+        ],
+      };
+    }
+  },
+);
+
 // Log errors to file for debugging
 process.on('uncaughtException', (error) => {
   fs.appendFile('/tmp/mcp-server-error.log', `Uncaught Exception: ${error.stack}\n`).catch(() => {});

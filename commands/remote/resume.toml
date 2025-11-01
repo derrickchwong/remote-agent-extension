@@ -1,0 +1,16 @@
+prompt = """
+Resume the agent sandbox named: {{args}}
+
+Use the resume_sandbox tool to resume the specified sandbox by setting its replicas to 1.
+
+Before resuming:
+- Confirm the sandbox name is correct
+- Explain that resuming will scale up the sandbox to 1 replica, starting it back up
+
+After resuming:
+- Show a success message confirming the sandbox was resumed
+- Indicate that it may take a few moments for the sandbox to become fully ready
+- Suggest using the status command to check when the sandbox is ready
+
+If there are any errors (e.g., sandbox not found, permissions issues), explain what went wrong and suggest solutions.
+"""

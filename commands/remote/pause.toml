@@ -1,0 +1,15 @@
+prompt = """
+Pause the agent sandbox named: {{args}}
+
+Use the pause_sandbox tool to pause the specified sandbox by setting its replicas to 0.
+
+Before pausing:
+- Confirm the sandbox name is correct
+- Explain that pausing will scale down the sandbox to 0 replicas, effectively stopping it
+
+After pausing:
+- Show a success message confirming the sandbox was paused
+- Indicate that the sandbox can be resumed later using the resume command
+
+If there are any errors (e.g., sandbox not found, permissions issues), explain what went wrong and suggest solutions.
+"""
