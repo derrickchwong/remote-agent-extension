@@ -3,7 +3,7 @@
   "version": "0.0.1",
   "description": "Gemini CLI extension for managing remote agent sandboxes on GKE",
   "type": "module",
-  "main": "remote-sandbox.js",
+  "main": "dist/remote-sandbox.js",
   "scripts": {
     "build": "tsc"
   },

@@ -425,5 +425,16 @@ server.registerTool(
   },
 );
 
+// Log errors to file for debugging
+process.on('uncaughtException', (error) => {
+  fs.appendFile('/tmp/mcp-server-error.log', `Uncaught Exception: ${error.stack}\n`).catch(() => {});
+  process.exit(1);
+});
+
+process.on('unhandledRejection', (reason) => {
+  fs.appendFile('/tmp/mcp-server-error.log', `Unhandled Rejection: ${reason}\n`).catch(() => {});
+  process.exit(1);
+});
+
 const transport = new StdioServerTransport();
 await server.connect(transport);
