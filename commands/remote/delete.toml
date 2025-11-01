@@ -1,0 +1,15 @@
+prompt = """
+Delete the agent sandbox named: {{args}}
+
+Use the delete_sandbox tool to delete the specified sandbox from the GKE cluster.
+
+Before deleting:
+- Confirm the sandbox name is correct
+- Warn that this action cannot be undone
+
+After deletion:
+- Show a success message confirming the sandbox was deleted
+- List any resources that were cleaned up
+
+If there are any errors (e.g., sandbox not found, permissions issues), explain what went wrong and suggest solutions.
+"""
