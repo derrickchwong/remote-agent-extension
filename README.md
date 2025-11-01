@@ -21,24 +21,9 @@ This Gemini CLI extension allows you to manage remote agent sandboxes on a GKE c
 
 ## Installation
 
-1. Clone or download this extension:
+1. Install the extension to Gemini CLI:
    ```bash
-   cd /path/to/async-remote-agent-extension
-   ```
-
-2. Install dependencies:
-   ```bash
-   npm install
-   ```
-
-3. Build the extension:
-   ```bash
-   npm run build
-   ```
-
-4. Link the extension to Gemini CLI:
-   ```bash
-   gemini extensions link .
+   gemini extensions install https://github.com/derrickchwong/remote-agent-extension
    ```
 
 ## Configuration
