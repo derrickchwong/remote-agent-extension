@@ -1,8 +1,6 @@
 {
   "proxyUrl": "http://PROXY_EXTERNAL_IP",
-  "username": "default",
-  "namespace": "default",
-  "kubeconfig": "/path/to/your/gke/kubeconfig",
-  "defaultImage": "sandbox-runtime:latest",
+  "apiKey": "sk_live_YOUR_API_KEY_HERE",
+  "defaultImage": "us-central1-docker.pkg.dev/your-project/your-repo/sandbox-runtime:latest",
   "defaultPort": 8888
 }

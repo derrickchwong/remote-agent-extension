@@ -20,8 +20,7 @@ const configPath = path.join(process.env.HOME || '', '.config', 'gemini-remote-s
 
 interface SandboxConfig {
   proxyUrl: string;
-  username?: string;
-  namespace?: string;
+  apiKey: string;
   defaultImage?: string;
   defaultPort?: number;
 }
@@ -34,6 +33,10 @@ async function loadConfig(): Promise<SandboxConfig> {
 
     if (!config.proxyUrl) {
       throw new Error('proxyUrl is required in config.json. Please set it to your proxy URL (e.g., http://34.27.37.121)');
+    }
+
+    if (!config.apiKey) {
+      throw new Error('apiKey is required in config.json. Generate one via the admin API: POST /api/admin/users/<userId>/apikeys');
     }
 
     return config;
@@ -61,20 +64,19 @@ server.registerTool(
       const config = await loadConfig();
       const sandboxImage = image || config.defaultImage;
       const sandboxPort = port || config.defaultPort || 8888;
-      const username = config.username || 'default';
-      const namespace = config.namespace || 'default';
 
       // Create sandbox via proxy API
       const createUrl = `${config.proxyUrl}/api/sandboxes`;
       const createResponse = await fetch(createUrl, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${config.apiKey}`,
+        },
         body: JSON.stringify({
           name,
-          username,
           image: sandboxImage,
           port: sandboxPort,
-          namespace,
         }),
       });
 
@@ -86,7 +88,7 @@ server.registerTool(
       const createData = await createResponse.json();
 
       // Poll for sandbox readiness (up to 60 seconds)
-      const statusUrl = `${config.proxyUrl}/api/sandboxes/${username}/${name}`;
+      const statusUrl = `${config.proxyUrl}/api/sandboxes/${name}`;
       let sandboxData: any = {};
       let ready = false;
       const maxAttempts = 12; // 12 * 5 seconds = 60 seconds
@@ -95,7 +97,11 @@ server.registerTool(
         await new Promise(resolve => setTimeout(resolve, 5000));
 
         try {
-          const statusResponse = await fetch(statusUrl);
+          const statusResponse = await fetch(statusUrl, {
+            headers: {
+              'Authorization': `Bearer ${config.apiKey}`,
+            },
+          });
           if (statusResponse.ok) {
             sandboxData = await statusResponse.json();
             if (sandboxData.ready) {
@@ -120,7 +126,7 @@ server.registerTool(
               message: `Sandbox '${name}' created successfully`,
               sandbox: {
                 name: sandboxData.name || name,
-                namespace: sandboxData.namespace || namespace,
+                namespace: sandboxData.namespace || 'pending',
                 serviceFQDN: sandboxData.serviceFQDN || 'pending',
                 ready: sandboxData.ready || false,
               },
@@ -157,11 +163,14 @@ server.registerTool(
   async ({ name }) => {
     try {
       const config = await loadConfig();
-      const username = config.username || 'default';
 
       // Get sandbox status from proxy API
-      const url = `${config.proxyUrl}/api/sandboxes/${username}/${name}`;
-      const response = await fetch(url);
+      const url = `${config.proxyUrl}/api/sandboxes/${name}`;
+      const response = await fetch(url, {
+        headers: {
+          'Authorization': `Bearer ${config.apiKey}`,
+        },
+      });
 
       if (!response.ok) {
         if (response.status === 404) {
@@ -216,13 +225,13 @@ server.registerTool(
         throw new Error('proxyUrl not configured. Please set proxyUrl in config.json');
       }
 
-      const username = config.username || 'default';
-      const url = `${config.proxyUrl}/${username}/${name}/v1/shell/exec`;
+      const url = `${config.proxyUrl}/proxy/${name}/v1/shell/exec`;
 
       const response = await fetch(url, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'Authorization': `Bearer ${config.apiKey}`,
         },
         body: JSON.stringify({ command }),
       });
@@ -285,7 +294,11 @@ server.registerTool(
 
       // List sandboxes from proxy API
       const url = `${config.proxyUrl}/api/sandboxes`;
-      const response = await fetch(url);
+      const response = await fetch(url, {
+        headers: {
+          'Authorization': `Bearer ${config.apiKey}`,
+        },
+      });
 
       if (!response.ok) {
         const errorData = await response.json();
@@ -331,13 +344,14 @@ server.registerTool(
   async ({ name }) => {
     try {
       const config = await loadConfig();
-      const username = config.username || 'default';
-      const namespace = config.namespace || 'default';
 
       // Delete sandbox via proxy API
-      const url = `${config.proxyUrl}/api/sandboxes/${username}/${name}?namespace=${namespace}`;
+      const url = `${config.proxyUrl}/api/sandboxes/${name}`;
       const response = await fetch(url, {
         method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${config.apiKey}`,
+        },
       });
 
       if (!response.ok) {
@@ -387,13 +401,14 @@ server.registerTool(
   async ({ name }) => {
     try {
       const config = await loadConfig();
-      const username = config.username || 'default';
-      const namespace = config.namespace || 'default';
 
       // Pause sandbox via proxy API
-      const url = `${config.proxyUrl}/api/sandboxes/${username}/${name}/pause?namespace=${namespace}`;
+      const url = `${config.proxyUrl}/api/sandboxes/${name}/pause`;
       const response = await fetch(url, {
         method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${config.apiKey}`,
+        },
       });
 
       if (!response.ok) {
@@ -443,13 +458,14 @@ server.registerTool(
   async ({ name }) => {
     try {
       const config = await loadConfig();
-      const username = config.username || 'default';
-      const namespace = config.namespace || 'default';
 
       // Resume sandbox via proxy API
-      const url = `${config.proxyUrl}/api/sandboxes/${username}/${name}/resume?namespace=${namespace}`;
+      const url = `${config.proxyUrl}/api/sandboxes/${name}/resume`;
       const response = await fetch(url, {
         method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${config.apiKey}`,
+        },
       });
 
       if (!response.ok) {
