@@ -1,0 +1,14 @@
+prompt = """
+List all agent sandboxes available to the authenticated user.
+
+Use the list_sandboxes tool to retrieve all sandboxes.
+
+Display the sandboxes in a clear, formatted table showing:
+- Sandbox name
+- Namespace
+- Ready status
+- Service FQDN
+- Creation timestamp
+
+If no sandboxes are found, indicate that no sandboxes exist for this user.
+"""

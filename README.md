@@ -55,8 +55,7 @@ Edit the config file with your settings:
 ```json
 {
   "proxyUrl": "http://35.123.45.67",
-  "username": "alice",
-  "namespace": "default",
+  "apiKey": "sk_live_YOUR_API_KEY_HERE",
   "defaultImage": "us-central1-docker.pkg.dev/agent-sandbox-476202/agent-sandbox/sandbox-runtime:latest",
   "defaultPort": 8888
 }
@@ -64,10 +63,48 @@ Edit the config file with your settings:
 
 Configuration options:
 - `proxyUrl`: **REQUIRED** - URL of the sandbox proxy LoadBalancer (get this with: `kubectl get service sandbox-proxy`)
-- `username`: Username for sandbox routing (default: "default"). Sandboxes created will have a `user` label with this value.
-- `namespace`: Kubernetes namespace where sandboxes will be created (default: "default")
+- `apiKey`: **REQUIRED** - Your user API key for authentication (see Authentication Setup below)
 - `defaultImage`: Default container image for sandboxes (optional)
 - `defaultPort`: Default port for the sandbox API (default: 8888)
+
+### Authentication Setup
+
+The proxy now requires API key authentication. To get your API key:
+
+1. **Get the admin API key** (for first-time setup):
+   ```bash
+   kubectl get secret admin-credentials -o jsonpath='{.data.ADMIN_API_KEY}' | base64 -d
+   ```
+
+2. **Create a user** (using admin API key):
+   ```bash
+   export ADMIN_API_KEY="<admin-key-from-step-1>"
+   export PROXY_IP=$(kubectl get svc sandbox-proxy -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
+
+   curl -X POST http://$PROXY_IP/api/admin/users \
+     -H "Authorization: Bearer $ADMIN_API_KEY" \
+     -H "Content-Type: application/json" \
+     -d '{"username":"yourname","email":"your@email.com"}'
+   ```
+
+3. **Generate an API key for your user** (save the user ID from step 2):
+   ```bash
+   export USER_ID="<uuid-from-step-2>"
+
+   curl -X POST http://$PROXY_IP/api/admin/users/$USER_ID/apikeys \
+     -H "Authorization: Bearer $ADMIN_API_KEY" \
+     -H "Content-Type: application/json" \
+     -d '{"name":"Gemini CLI Extension"}'
+   ```
+
+4. **Save the API key** shown in the response to your config.json:
+   ```json
+   {
+     "apiKey": "sk_live_abc123def456..."
+   }
+   ```
+
+**Security Note**: Keep your API key secure! It provides access to all your sandboxes.
 
 ## Usage
 
@@ -100,6 +137,15 @@ Executes a command in the sandbox and returns the results.
 Example:
 ```
 /remote:prompt my-sandbox ls -la
+```
+
+#### `/remote:list`
+
+Lists all sandboxes for the authenticated user.
+
+Example:
+```
+/remote:list
 ```
 
 ### Tools
@@ -170,11 +216,13 @@ Sandbox Pods (internal Kubernetes services)
 ```
 
 **Proxy API Endpoints:**
-- `POST /api/sandboxes` - Create sandbox (proxy creates k8s resources)
-- `GET /api/sandboxes` - List all sandboxes
-- `GET /api/sandboxes/:username/:name` - Get sandbox status
-- `DELETE /api/sandboxes/:username/:name` - Delete sandbox
-- `POST /:username/:name/v1/shell/exec` - Execute command in sandbox
+- `POST /api/sandboxes` - Create sandbox (requires authentication)
+- `GET /api/sandboxes` - List user's sandboxes (requires authentication)
+- `GET /api/sandboxes/:name` - Get sandbox status (requires authentication)
+- `DELETE /api/sandboxes/:name` - Delete sandbox (requires authentication)
+- `POST /proxy/:name/v1/shell/exec` - Execute command in sandbox (requires authentication)
+- `POST /api/sandboxes/:name/pause` - Pause sandbox (requires authentication)
+- `POST /api/sandboxes/:name/resume` - Resume sandbox (requires authentication)
 
 **Benefits:**
 - ✅ No kubectl required - works from anywhere with internet access
@@ -189,22 +237,29 @@ The proxy service is in `~/workspaces/remote-agent-sandbox-proxy`. Deploy it to 
 
 ## Troubleshooting
 
-### "proxyUrl is required in config.json"
-Make sure you have created the config file at `~/.config/gemini-remote-sandbox/config.json` with at least a `proxyUrl` field.
+### "proxyUrl is required in config.json" or "apiKey is required"
+Make sure you have created the config file at `~/.config/gemini-remote-sandbox/config.json` with both `proxyUrl` and `apiKey` fields.
+
+### "Unauthorized" / "Invalid API key"
+- Verify your API key is correct in config.json
+- Check that your API key hasn't expired
+- Ensure you're using a user API key (starts with `sk_live_`), not the admin key
+- Generate a new API key if needed (see Authentication Setup above)
 
 ### "Failed to create sandbox" / Connection errors
 - Check that the proxy is running: `kubectl get deployment sandbox-proxy`
 - Verify the proxy LoadBalancer IP: `kubectl get service sandbox-proxy`
 - Test proxy health: `curl http://PROXY_IP/health`
 - Ensure your `proxyUrl` in config.json matches the proxy's external IP
+- Verify authentication is working: `curl http://PROXY_IP/api/me -H "Authorization: Bearer YOUR_API_KEY"`
 
 ### "Sandbox not ready"
-Wait 30-60 seconds for the sandbox pod to start. You can check the status with `/remote:status <name>` or `list all sandboxes`.
+Wait 30-60 seconds for the sandbox pod to start. You can check the status with `/remote:status <name>` or `/remote:list`.
 
-### "Sandbox not found" 404 errors
-- Verify the sandbox exists: ask Gemini to "list all sandboxes"
-- Check that your `username` in config.json matches the sandbox's `user` label
-- The proxy may need time to discover new sandboxes (30 second refresh interval)
+### "Sandbox not found" / "Forbidden" 404/403 errors
+- Verify the sandbox exists: use `/remote:list` to see your sandboxes
+- Check that you own the sandbox - users can only access their own sandboxes
+- Verify you're using the correct API key for your user
 
 ### "Failed to execute command"
 Ensure your sandbox image includes the FastAPI runtime server as shown in the agent-sandbox examples.
